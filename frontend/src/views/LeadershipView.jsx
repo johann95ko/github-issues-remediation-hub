@@ -19,7 +19,12 @@ export default function LeadershipView({ overview }) {
         <div className="card kpi">
           <div className="label">Estimated value delivered</div>
           <div className="value ok">{money(roi.benefit_usd)}</div>
-          <div className="hint">{roi.engineer_hours_saved} engineer-hours saved at ${roi.assumptions.engineer_usd_per_hour}/hr</div>
+          <div className="hint">at ${roi.assumptions.engineer_usd_per_hour}/engineer-hour</div>
+        </div>
+        <div className="card kpi">
+          <div className="label">Development hours saved</div>
+          <div className="value">{roi.engineer_hours_saved}</div>
+          <div className="hint">engineer-hours returned to the roadmap</div>
         </div>
         <div className="card kpi">
           <div className="label">Compute cost to date</div>

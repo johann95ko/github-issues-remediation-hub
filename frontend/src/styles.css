@@ -74,7 +74,7 @@ h1, h2, h3 { font-family: 'Source Serif 4', Georgia, serif; }
   letter-spacing: 1px; font-family: 'Source Sans 3', sans-serif; font-weight: 700;
   margin: 28px 0 12px; }
 
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
 @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 
 .card {
