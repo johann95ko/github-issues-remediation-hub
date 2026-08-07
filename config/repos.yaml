@@ -1,0 +1,18 @@
+# Repositories monitored by the remediation hub.
+#
+# Adding a repository is a config change, not a code change: append an entry
+# here (and point the repo's GitHub webhook at this service) and it will be
+# picked up on the next restart.
+repositories:
+  - full_name: johann95ko/superset
+    # trigger_labels: only issues carrying at least one of these labels start a
+    # remediation. Keeps noisy repos from burning ACUs on every issue.
+    trigger_labels: [devin-fix]
+    # merge_policy controls how much human scrutiny PRs get:
+    #   review     - Devin opens the PR, a human must approve and merge
+    #   auto_merge - PRs merge automatically once CI passes (low-scrutiny repos)
+    merge_policy: review
+    # Hard per-session compute budget. A runaway session stops here.
+    max_acu_per_session: 15
+    # Used by the ROI model: what a human fix of a median issue costs.
+    baseline_engineer_hours_per_issue: 4

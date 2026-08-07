@@ -1,0 +1,20 @@
+services:
+  hub:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DEVIN_API_KEY: ${DEVIN_API_KEY:-}
+      DEVIN_ORG_ID: ${DEVIN_ORG_ID:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      # Defaults to demo mode so `docker compose up` works with zero setup.
+      DEMO_MODE: ${DEMO_MODE:-true}
+      USD_PER_ACU: ${USD_PER_ACU:-2.25}
+      ENGINEER_USD_PER_HOUR: ${ENGINEER_USD_PER_HOUR:-95}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
+    volumes:
+      - hub-data:/data
+      - ./config:/config:ro
+
+volumes:
+  hub-data:
