@@ -89,6 +89,7 @@ h1, h2, h3 { font-family: 'Source Serif 4', Georgia, serif; }
 .kpi .value { font-size: 32px; font-weight: 700; font-family: 'Source Serif 4', serif; margin-top: 4px; }
 .kpi .hint { font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
 .kpi .value.ok { color: var(--ok); }
+.kpi .approx { font-size: 14px; color: var(--ink-soft); font-family: 'Source Sans 3', sans-serif; font-weight: 600; }
 .kpi .value.accent { color: var(--accent); }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
@@ -141,8 +142,8 @@ tr.expandable:hover { background: #faf8f5; }
 
 /* --- Engineering view controls --- */
 
-.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 28px; }
-.section-head .section-title { margin: 0 0 12px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 28px 0 12px; }
+.section-head .section-title { margin: 0; }
 
 .btn {
   font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -181,15 +182,18 @@ tr.expandable:hover { background: #faf8f5; }
 
 /* --- Devin-proposed findings --- */
 
-.finding-list { list-style: none; padding: 0; }
+.finding-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .finding {
   display: flex; justify-content: space-between; gap: 16px;
-  padding: 12px 0; border-bottom: 1px solid var(--line);
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fbfaf8; border-left-width: 3px;
 }
-.finding:last-child { border-bottom: none; }
-.finding.dim { opacity: 0.65; }
-.finding-title { font-weight: 700; font-size: 14px; }
-.finding-desc { font-size: 13.5px; color: var(--ink-soft); margin: 4px 0; max-width: 70ch; }
+.finding.dim { opacity: 0.65; border-left-width: 1px; }
+.finding:has(.sev-high) { border-left-color: var(--accent); }
+.finding:has(.sev-medium) { border-left-color: var(--warn); }
+.finding:has(.sev-low) { border-left-color: var(--line); }
+.finding-title { font-weight: 700; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+.finding-desc { font-size: 13.5px; color: var(--ink-soft); margin: 6px 0; max-width: 70ch; line-height: 1.55; }
 .finding-actions { display: flex; gap: 8px; align-items: flex-start; white-space: nowrap; }
 .badge.sev-high { background: #fbe3e4; color: var(--accent-dark); }
 .badge.sev-medium { background: #fdf3d7; color: var(--warn); }
@@ -197,9 +201,19 @@ tr.expandable:hover { background: #faf8f5; }
 .reviewed-findings { margin-top: 10px; }
 .reviewed-findings summary { font-size: 13px; color: var(--ink-soft); cursor: pointer; font-weight: 600; }
 
-/* --- Audit trail problem → fix summary --- */
+/* --- Audit trail --- */
 
-.summary-cell .problem { font-size: 13px; }
-.summary-cell .problem::before { content: "⚠ "; color: var(--warn); }
-.summary-cell .fix { font-size: 13px; color: var(--ok); margin-top: 3px; }
-.summary-cell .fix::before { content: "✓ "; font-weight: 700; }
+table.audit td { padding: 14px 10px; }
+table.audit .issue-title { font-weight: 600; }
+table.audit .meta { margin-top: 4px; }
+
+.summary-cell .problem, .summary-cell .fix {
+  font-size: 13px; line-height: 1.5; padding-left: 18px; position: relative;
+}
+.summary-cell .problem::before {
+  content: "⚠"; color: var(--warn); position: absolute; left: 0;
+}
+.summary-cell .fix { color: var(--ok); margin-top: 5px; }
+.summary-cell .fix::before {
+  content: "✓"; font-weight: 700; position: absolute; left: 0;
+}

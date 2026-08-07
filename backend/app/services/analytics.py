@@ -25,11 +25,23 @@ def _all(db: Session) -> list[Remediation]:
     return list(db.scalars(select(Remediation)))
 
 
+# Conservative per-session spend assumed while the Devin API still reports
+# 0 ACUs (consumption lands late in a session's life). Keeps the cost side of
+# the ROI populated instead of showing $0 for work that clearly ran.
+ESTIMATED_ACUS_PER_SESSION = 5.0
+
+
 def cost_vs_benefit(db: Session) -> dict:
     """Q: does the benefit outweigh the cost, at a glance?"""
     settings = get_settings()
     rows = _all(db)
-    total_acus = sum(r.acus_consumed for r in rows)
+    reported_acus = sum(r.acus_consumed for r in rows)
+    estimated_acus = sum(
+        ESTIMATED_ACUS_PER_SESSION
+        for r in rows
+        if r.session_id and r.acus_consumed == 0
+    )
+    total_acus = reported_acus + estimated_acus
     cost_usd = total_acus * settings.usd_per_acu
     # Benefit is claimed only for remediations that produced a reviewable PR;
     # failures and escalations earn zero, which keeps the ROI story honest.
@@ -37,6 +49,7 @@ def cost_vs_benefit(db: Session) -> dict:
     benefit_usd = hours_saved * settings.engineer_usd_per_hour
     return {
         "total_acus": round(total_acus, 2),
+        "cost_is_estimated": estimated_acus > 0,
         "cost_usd": round(cost_usd, 2),
         "engineer_hours_saved": round(hours_saved, 1),
         "benefit_usd": round(benefit_usd, 2),
@@ -44,6 +57,7 @@ def cost_vs_benefit(db: Session) -> dict:
         "assumptions": {
             "usd_per_acu": settings.usd_per_acu,
             "engineer_usd_per_hour": settings.engineer_usd_per_hour,
+            "estimated_acus_per_unreported_session": ESTIMATED_ACUS_PER_SESSION,
         },
     }
 

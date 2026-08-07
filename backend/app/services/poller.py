@@ -57,10 +57,18 @@ class Poller:
     async def reconcile_once(self) -> None:
         db = SessionLocal()
         try:
+            # Escalated rows whose underlying session is still live are
+            # re-synced too, so a mis-escalation self-heals once the session
+            # reports a PR/outcome.
             active = list(
                 db.scalars(
                     select(Remediation).where(
-                        Remediation.state == "running", Remediation.session_id != ""
+                        Remediation.session_id != "",
+                        (Remediation.state == "running")
+                        | (
+                            (Remediation.state == "escalated")
+                            & (Remediation.devin_status == "running")
+                        ),
                     )
                 )
             )
@@ -107,7 +115,12 @@ class Poller:
             record.state = "failed"
             record.completed_at = int(time.time())
         elif status == "suspended" or (status == "running" and detail == "waiting_for_user"):
-            if record.nudge_count < MAX_NUDGES:
+            # "waiting_for_user" with a PR and a reported outcome is Devin
+            # done and awaiting review, not stuck — close it out as terminal.
+            if record.pr_url and record.outcome:
+                record.state = self._terminal_state(record)
+                record.completed_at = int(time.time())
+            elif record.nudge_count < MAX_NUDGES:
                 record.nudge_count += 1
                 try:
                     await self._devin.send_message(record.session_id, NUDGE_MESSAGE)

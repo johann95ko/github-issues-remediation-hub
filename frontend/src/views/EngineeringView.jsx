@@ -181,7 +181,7 @@ export default function EngineeringView() {
         </table>
       </div>
 
-      <div className="section-head">
+      <div className="section-head" style={{ marginTop: 40 }}>
         <h2 className="section-title">Findings proposed by Devin</h2>
         {proposed.length > 0 && <span className="badge awaiting_review">{proposed.length} awaiting review</span>}
       </div>
@@ -225,7 +225,7 @@ export default function EngineeringView() {
         )}
       </div>
 
-      <h2 className="section-title">Remediation audit trail</h2>
+      <h2 className="section-title" style={{ marginTop: 40 }}>Remediation audit trail</h2>
       <div className="card">
         <table className="audit">
           <thead>
@@ -242,8 +242,8 @@ export default function EngineeringView() {
                   <td>
                     <a href={r.issue_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
                       {r.repo}#{r.issue_number}
-                    </a>{' '}
-                    {r.issue_title}
+                    </a>
+                    <div className="issue-title">{r.issue_title}</div>
                     <div className="meta">{ts(r.created_at)}</div>
                   </td>
                   <td className="summary-cell">

@@ -23,8 +23,8 @@ export default function LeadershipView({ overview }) {
         </div>
         <div className="card kpi">
           <div className="label">Compute cost to date</div>
-          <div className="value">{money(roi.cost_usd)}</div>
-          <div className="hint">{roi.total_acus} ACUs at ${roi.assumptions.usd_per_acu}/ACU</div>
+          <div className="value">{money(roi.cost_usd)}{roi.cost_is_estimated ? <span className="approx"> est.</span> : ''}</div>
+          <div className="hint">{roi.total_acus} ACUs at ${roi.assumptions.usd_per_acu}/ACU{roi.cost_is_estimated ? ' (includes estimates for sessions not yet billed)' : ''}</div>
         </div>
         <div className="card kpi">
           <div className="label">Return on investment</div>
