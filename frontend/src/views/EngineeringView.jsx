@@ -241,8 +241,13 @@ export default function EngineeringView() {
                 <div className="finding-title">
                   <span className={`badge sev-${f.severity}`}>{f.severity}</span> {f.title}
                 </div>
-                <div className="finding-desc">{f.description}</div>
                 <div className="meta">{f.scan_id ? `Found by a proactive scan of ${f.repo}` : `Found while remediating ${f.repo}#${f.source_issue_number}`} · {ts(f.created_at)}</div>
+                {f.description && (
+                  <details className="finding-details">
+                    <summary>Details</summary>
+                    <div className="finding-desc">{f.description}</div>
+                  </details>
+                )}
               </div>
               <div className="finding-actions">
                 <button className="btn primary" onClick={() => reviewFinding(f, 'approve')}>Approve &amp; file</button>
