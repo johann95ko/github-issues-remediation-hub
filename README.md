@@ -29,20 +29,44 @@ GitHub issue (labeled devin-fix)
 Pull request referencing the issue  ──►  human review  (or auto-merge on green CI)
 ```
 
-## Quick start (zero credentials — simulated Devin)
+## Run it: two modes
+
+| Mode | Devin sessions | Needs credentials | Command |
+|---|---|---|---|
+| **Demo** (default) | Simulated | None | `docker compose up --build -d` |
+| **Live** | Real, via the Devin API | Devin service-user key + org ID | see [Live mode](#live-mode-real-devin-sessions) |
+
+### Quick start — simulate the workflow (zero credentials)
 
 Requires Docker and `jq`.
 
 ```bash
+git clone https://github.com/johann95ko/github-issues-remediation-hub
+cd github-issues-remediation-hub
 docker compose up --build -d
-./scripts/simulate_issue.sh                 # replay a GitHub issue webhook
+
+# Simulate GitHub delivering "issue labeled devin-fix" webhooks:
+./scripts/simulate_issue.sh
 ./scripts/simulate_issue.sh 207 "SQL Lab autocomplete returns stale schema"
-open http://localhost:8000                  # watch the dashboard update live
+./scripts/simulate_issue.sh 348 "Dashboard filters reset after refresh"
+
+open http://localhost:8000     # watch the dashboard update live
 ```
 
-Demo mode (the default) swaps the Devin API for a deterministic simulator:
-sessions "run" for 1–2 minutes, most produce PRs, some fail or escalate — so
-every dashboard state is demonstrable without spend.
+What you should see:
+1. Each `simulate_issue.sh` call returns `{"status": "accepted", ...}` with a
+   session ID — the webhook was verified, deduplicated, and a (simulated)
+   Devin session started.
+2. **Executive Overview** shows the sessions under *Active remediations*;
+   after 1–2 minutes they complete and the ROI, weekly-impact and throughput
+   figures populate.
+3. **Engineering** shows each remediation in the audit trail with its
+   problem → fix summary, and occasionally a Devin-proposed finding to review.
+
+Demo mode swaps the Devin API for a deterministic simulator: sessions "run"
+for 1–2 minutes, most produce PRs, some fail or escalate — so every dashboard
+state is demonstrable without spend. Re-running a simulate command for the
+same issue number while it's active is deduplicated (no double sessions).
 
 ## Live mode (real Devin sessions)
 
@@ -58,17 +82,24 @@ GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 20) \
 docker compose up --build -d
 ```
 
-3. In each monitored GitHub repository: **Settings → Webhooks → Add webhook**
-   - Payload URL: `https://<your-host>/webhooks/github`
+3. Give GitHub a URL that reaches the hub. On a local machine, open a free
+   tunnel (no hosting or deployment needed — keep it running while you want
+   webhooks delivered):
+
+```bash
+cloudflared tunnel --url http://localhost:8000   # or: ngrok http 8000
+```
+
+4. In each monitored GitHub repository: **Settings → Webhooks → Add webhook**
+   - Payload URL: `https://<tunnel-or-host>/webhooks/github`
    - Content type: `application/json`
    - Secret: the same `GITHUB_WEBHOOK_SECRET`
-   - Events: *Issues*
+   - Events: *Let me select individual events → Issues*
 
-4. Label an issue `devin-fix`. The hub starts a session; the PR appears on the
-   dashboard when Devin finishes.
-
-> For a local machine, expose the port with a tunnel (e.g. `ngrok http 8000`)
-> and use the tunnel URL as the webhook payload URL.
+5. Create (or re-label) an issue with the `devin-fix` label. The hub starts a
+   budget-capped Devin session; the PR and problem → fix summary appear on the
+   dashboard when Devin finishes. Requests with a bad/missing HMAC signature
+   are rejected with 401.
 
 ## Monitoring more repositories
 
@@ -146,9 +177,21 @@ config/        repos.yaml — first-boot seed for monitored repositories
 scripts/       simulate_issue.sh — replay a GitHub webhook locally
 ```
 
+## Remediated issues (live proof)
+
+The monitored fork is https://github.com/johann95ko/superset. Issues recreated
+from real `apache/superset` bug reports, each remediated end-to-end by this
+system with a real Devin session:
+
+| Issue | Devin's PR |
+|---|---|
+| [#4 Pie Charts do not format Percentage values correctly](https://github.com/johann95ko/superset/issues/4) | [PR #9](https://github.com/johann95ko/superset/pull/9) |
+| [#5 Metric Warning text blank after save in Edit Dataset](https://github.com/johann95ko/superset/issues/5) | [PR #8](https://github.com/johann95ko/superset/pull/8) |
+| [#6 Timeseries Bar: stacked 'Only Total' sum includes sort metric](https://github.com/johann95ko/superset/issues/6) | [PR #7](https://github.com/johann95ko/superset/pull/7) |
+
+All issues carrying the trigger label:
+https://github.com/johann95ko/superset/issues?q=label%3Adevin-fix
+
 ## Related
 
-- Remediated repository (fork): https://github.com/johann95ko/superset —
-  remediated issues are labeled `devin-fix`
-  ([view them](https://github.com/johann95ko/superset/issues?q=label%3Adevin-fix))
 - Devin API docs: https://docs.devin.ai/api-reference/overview
