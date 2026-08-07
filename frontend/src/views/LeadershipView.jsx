@@ -28,7 +28,8 @@ export default function LeadershipView({ overview }) {
         </div>
         <div className="card kpi">
           <div className="label">Return on investment</div>
-          <div className="value accent">{roi.roi_multiple ? `${roi.roi_multiple}×` : '—'}</div>
+          {/* Green when paying for itself; red is reserved for a negative story. */}
+          <div className={`value ${roi.roi_multiple >= 1 ? 'ok' : 'accent'}`}>{roi.roi_multiple ? `${roi.roi_multiple}×` : '—'}</div>
           <div className="hint">estimated value delivered ÷ compute cost</div>
         </div>
         <div className="card kpi">
