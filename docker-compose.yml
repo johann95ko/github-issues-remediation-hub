@@ -2,7 +2,7 @@ services:
   hub:
     build: .
     ports:
-      - "8000:8000"
+      - "${HUB_PORT:-8000}:8000"
     environment:
       DEVIN_API_KEY: ${DEVIN_API_KEY:-}
       DEVIN_ORG_ID: ${DEVIN_ORG_ID:-}

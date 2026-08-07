@@ -195,6 +195,15 @@ tr.expandable:hover { background: #faf8f5; }
 .finding-title { font-weight: 700; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
 .finding-desc { font-size: 13.5px; color: var(--ink-soft); margin: 6px 0; max-width: 70ch; line-height: 1.55; }
 .finding-actions { display: flex; gap: 8px; align-items: flex-start; white-space: nowrap; }
+.scan-list { list-style: none; margin: 0; padding: 0; }
+.scan-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px;
+}
+.scan-row:first-child { border-top: none; }
+.scan-row .scan-repo { font-weight: 600; }
+.scan-row .meta { flex: 1; min-width: 0; }
+
 .badge.sev-high { background: #fbe3e4; color: var(--accent-dark); }
 .badge.sev-medium { background: #fdf3d7; color: var(--warn); }
 .badge.sev-low { background: #eeeeef; color: var(--ink-soft); }

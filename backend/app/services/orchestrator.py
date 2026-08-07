@@ -15,10 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.models.remediation import Remediation
 from app.models.repo import MonitoredRepo
+from app.models.repo_scan import RepoScan
 from app.services.devin_client import (
     REMEDIATION_OUTPUT_SCHEMA,
+    SCAN_OUTPUT_SCHEMA,
     DevinClientProtocol,
     build_remediation_prompt,
+    build_scan_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,3 +123,47 @@ class Orchestrator:
         db.commit()
         logger.info("Started session %s for issue #%s", record.session_id, issue_number)
         return record
+
+    async def start_scan(self, db: Session, repo: MonitoredRepo) -> RepoScan | None:
+        existing = db.scalar(
+            select(RepoScan).where(
+                RepoScan.repo_full_name == repo.full_name,
+                RepoScan.state.in_(ACTIVE_STATES),
+            )
+        )
+        if existing is not None:
+            # One live scan per repo: a second concurrent scan of the same
+            # code only duplicates findings and spend.
+            return None
+
+        scan = RepoScan(repo_full_name=repo.full_name, state="queued")
+        db.add(scan)
+        db.commit()
+
+        payload = {
+            "prompt": build_scan_prompt(repo.full_name),
+            "title": f"Proactive defect scan: {repo.full_name}",
+            "tags": ["repo-scan", repo.full_name.replace("/", "--")],
+            "max_acu_limit": repo.max_acu_per_session,
+            "structured_output_required": True,
+            "structured_output_schema": SCAN_OUTPUT_SCHEMA,
+            "resumable": False,
+        }
+
+        try:
+            session = await self._devin.create_session(payload)
+        except Exception:
+            logger.exception("Failed to create scan session for %s", repo.full_name)
+            scan.state = "failed"
+            scan.touch()
+            db.commit()
+            return scan
+
+        scan.session_id = session["session_id"]
+        scan.session_url = session.get("url", "")
+        scan.state = "running"
+        scan.devin_status = session.get("status", "running")
+        scan.touch()
+        db.commit()
+        logger.info("Started scan session %s for %s", scan.session_id, repo.full_name)
+        return scan

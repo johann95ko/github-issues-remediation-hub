@@ -50,6 +50,30 @@ _FAKE_DISCOVERIES = [
 ]
 
 
+_FAKE_SCAN_FINDINGS = [
+    {
+        "title": "Dashboard thumbnail worker retries failed renders forever",
+        "description": "The thumbnail task requeues itself on any exception with no backoff or max-attempts, so a single permanently broken chart pins a worker. Suggest a bounded retry with dead-lettering.",
+        "severity": "high",
+    },
+    {
+        "title": "CSV upload accepts files with duplicate column names silently",
+        "description": "Duplicate headers are deduplicated by overwriting, so the second column's data silently replaces the first. Users get wrong data with no warning.",
+        "severity": "medium",
+    },
+    {
+        "title": "Alert emails render chart links against the internal hostname",
+        "description": "Links in alert emails are built from the worker's request-less context using WEBDRIVER_BASEURL, which points at the internal service name and 404s for recipients.",
+        "severity": "medium",
+    },
+    {
+        "title": "Annotation layer tooltips escape HTML twice",
+        "description": "Descriptions containing ampersands render as &amp;amp; in tooltips — double-escaping between the API serializer and the frontend sanitizer.",
+        "severity": "low",
+    },
+]
+
+
 class DemoDevinClient:
     def __init__(self) -> None:
         self._sessions: dict[str, dict[str, Any]] = {}
@@ -97,6 +121,35 @@ class DemoDevinClient:
 
         elapsed = time.time() - record["created_at"]
         acus = round(min(elapsed / 12.0, 12.0), 2)
+
+        if "repo-scan" in record["tags"]:
+            if elapsed < record["duration"]:
+                return {
+                    "session_id": session_id,
+                    "url": record["url"],
+                    "acus_consumed": acus,
+                    "pull_requests": [],
+                    "structured_output": None,
+                    "status": "running",
+                    "status_detail": "working",
+                }
+            findings = random.sample(_FAKE_SCAN_FINDINGS, k=random.randint(2, 3))
+            return {
+                "session_id": session_id,
+                "url": record["url"],
+                "acus_consumed": acus,
+                "pull_requests": [],
+                "status": "exit",
+                "status_detail": "finished",
+                "structured_output": {
+                    "summary": (
+                        "Scanned recently changed modules, export paths and async task "
+                        "handling. Core flows are healthy; the findings below are "
+                        "concrete defects worth triaging (simulated scan)."
+                    ),
+                    "discovered_issues": findings,
+                },
+            }
         base = {
             "session_id": session_id,
             "url": record["url"],

@@ -35,7 +35,7 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db() -> None:
-    from app.models import discovered_issue, remediation, repo  # noqa: F401
+    from app.models import discovered_issue, remediation, repo, repo_scan  # noqa: F401
 
     Base.metadata.create_all(engine)
     _migrate_columns()
@@ -51,6 +51,9 @@ def _migrate_columns() -> None:
         "remediations": {
             "problem_summary": "TEXT DEFAULT ''",
             "fix_summary": "TEXT DEFAULT ''",
+        },
+        "discovered_issues": {
+            "scan_id": "INTEGER DEFAULT 0",
         },
     }
     with engine.begin() as conn:

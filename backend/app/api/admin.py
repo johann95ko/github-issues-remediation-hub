@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import urllib.parse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.models.discovered_issue import DiscoveredIssue
 from app.models.repo import MonitoredRepo
+from app.models.repo_scan import RepoScan
 
 router = APIRouter(prefix="/api")
 
@@ -88,6 +89,40 @@ def delete_repo(repo_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@router.post("/repos/{repo_id}/scan", status_code=202)
+async def scan_repo(repo_id: int, request: Request, db: Session = Depends(get_db)):
+    repo = db.get(MonitoredRepo, repo_id)
+    if repo is None:
+        raise HTTPException(404, "repository not found")
+    if not repo.enabled:
+        raise HTTPException(409, f"{repo.full_name} is paused; re-enable it before scanning")
+    scan = await request.app.state.orchestrator.start_scan(db, repo)
+    if scan is None:
+        raise HTTPException(409, f"a scan of {repo.full_name} is already in progress")
+    return _scan_out(scan)
+
+
+@router.get("/scans")
+def list_scans(db: Session = Depends(get_db)):
+    rows = db.scalars(select(RepoScan).order_by(RepoScan.created_at.desc()).limit(20))
+    return [_scan_out(s) for s in rows]
+
+
+def _scan_out(scan: RepoScan) -> dict:
+    return {
+        "id": scan.id,
+        "repo": scan.repo_full_name,
+        "state": scan.state,
+        "session_id": scan.session_id,
+        "session_url": scan.session_url,
+        "summary": scan.summary,
+        "findings_count": scan.findings_count,
+        "acus_consumed": scan.acus_consumed,
+        "created_at": scan.created_at,
+        "completed_at": scan.completed_at,
+    }
+
+
 @router.get("/discovered-issues")
 def list_discovered(db: Session = Depends(get_db)):
     rows = db.scalars(select(DiscoveredIssue).order_by(DiscoveredIssue.created_at.desc()))
@@ -102,6 +137,7 @@ def list_discovered(db: Session = Depends(get_db)):
             "status": d.status,
             "filed_issue_url": d.filed_issue_url,
             "created_at": d.created_at,
+            "scan_id": d.scan_id,
             # Prefilled GitHub "new issue" link: promotion needs one click and
             # zero GitHub credentials on the hub.
             "file_url": _new_issue_url(d),
@@ -123,10 +159,13 @@ def review_discovered(issue_id: int, action: str, db: Session = Depends(get_db))
 
 
 def _new_issue_url(finding: DiscoveredIssue) -> str:
-    body = (
-        f"{finding.description}\n\n---\n"
-        f"Discovered by Devin while remediating "
-        f"{finding.repo_full_name}#{finding.source_issue_number}."
-    )
+    if finding.scan_id:
+        provenance = "Discovered by Devin during a proactive repository scan."
+    else:
+        provenance = (
+            f"Discovered by Devin while remediating "
+            f"{finding.repo_full_name}#{finding.source_issue_number}."
+        )
+    body = f"{finding.description}\n\n---\n{provenance}"
     query = urllib.parse.urlencode({"title": finding.title, "body": body, "labels": "devin-discovered"})
     return f"https://github.com/{finding.repo_full_name}/issues/new?{query}"

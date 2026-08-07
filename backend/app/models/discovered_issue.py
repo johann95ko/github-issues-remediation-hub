@@ -22,6 +22,9 @@ class DiscoveredIssue(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # Which remediation surfaced this finding (provenance for the audit trail).
     remediation_id: Mapped[int] = mapped_column(Integer, index=True)
+    # Set when the finding came from a manual repository scan rather than a
+    # remediation side-discovery (exactly one of the two sources applies).
+    scan_id: Mapped[int] = mapped_column(Integer, default=0, index=True)
     repo_full_name: Mapped[str] = mapped_column(String(200), index=True)
     source_issue_number: Mapped[int] = mapped_column(Integer, default=0)
 

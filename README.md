@@ -50,8 +50,12 @@ docker compose up --build -d
 ./scripts/simulate_issue.sh 207 "SQL Lab autocomplete returns stale schema"
 ./scripts/simulate_issue.sh 348 "Dashboard filters reset after refresh"
 
-open http://localhost:8000     # watch the dashboard update live
+open http://localhost:8000     # macOS; on Linux use xdg-open, or just open it in a browser
 ```
+
+> Port 8000 already in use? Remap it: `HUB_PORT=8001 docker compose up --build -d`
+> and point the simulator at it with `HUB_URL=http://localhost:8001 ./scripts/simulate_issue.sh`.
+> (`jq` and `openssl` are the only prerequisites for the simulator script.)
 
 What you should see:
 1. Each `simulate_issue.sh` call returns `{"status": "accepted", ...}` with a
@@ -99,7 +103,9 @@ cloudflared tunnel --url http://localhost:8000   # or: ngrok http 8000
 5. Create (or re-label) an issue with the `devin-fix` label. The hub starts a
    budget-capped Devin session; the PR and problem → fix summary appear on the
    dashboard when Devin finishes. Requests with a bad/missing HMAC signature
-   are rejected with 401.
+   are rejected with 401. (Signature verification is active whenever
+   `GITHUB_WEBHOOK_SECRET` is set — in demo mode without a secret, unsigned
+   webhooks are accepted so the simulator works out of the box.)
 
 ## Monitoring more repositories
 
@@ -125,6 +131,12 @@ or approves it — approval opens a prefilled GitHub "new issue" form, so the
 human stays the author of record and the agent never files issues
 unsupervised.
 
+**Proactive scans** work the same way but on demand: the *Scan for issues*
+button next to a connected repository starts a read-only, budget-capped Devin
+audit of that repo. The scan changes no code and opens no PRs — its only
+output is verified, concrete defects routed into the same review queue, with
+the scan as their provenance.
+
 ## The dashboard — "how do I know this is working?"
 
 `http://localhost:8000` serves two views for two audiences:
@@ -142,7 +154,10 @@ unsupervised.
 findings awaiting review, and the full per-remediation audit trail. Each row
 leads with a one-line *problem → fix* summary so a reviewer can triage without
 opening the PR; expanding a row reveals the Devin session link, raw status,
-root cause, tests run and confidence.
+root cause, tests run and confidence. The session link opens a full replay of
+the agent's work, and for user-facing fixes the remediation contract asks
+Devin to embed visual proof (before/after screenshots or a screen recording of
+the fixed behavior) directly in the PR description.
 
 ROI model inputs are explicit and tunable via `USD_PER_ACU` and
 `ENGINEER_USD_PER_HOUR` environment variables.

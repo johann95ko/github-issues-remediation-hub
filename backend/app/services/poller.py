@@ -12,12 +12,13 @@ import asyncio
 import logging
 import time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.models.discovered_issue import DiscoveredIssue
 from app.models.remediation import Remediation
+from app.models.repo_scan import RepoScan
 from app.services.devin_client import DevinClientProtocol
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,17 @@ class Poller:
             )
             for record in active:
                 await self._sync_record(db, record)
+
+            scans = list(
+                db.scalars(
+                    select(RepoScan).where(
+                        RepoScan.session_id != "",
+                        RepoScan.state == "running",
+                    )
+                )
+            )
+            for scan in scans:
+                await self._sync_scan(db, scan)
         finally:
             db.close()
 
@@ -134,6 +146,69 @@ class Poller:
 
         record.touch()
         db.commit()
+
+    async def _sync_scan(self, db, scan: RepoScan) -> None:
+        try:
+            session = await self._devin.get_session(scan.session_id)
+        except Exception:
+            logger.exception("Failed to poll scan session %s", scan.session_id)
+            return
+
+        scan.devin_status = session.get("status", "")
+        scan.devin_status_detail = session.get("status_detail") or ""
+        scan.acus_consumed = float(session.get("acus_consumed") or 0.0)
+
+        output = session.get("structured_output") or {}
+        if output:
+            scan.summary = output.get("summary", scan.summary)
+            scan.findings_count = self._capture_scan_findings(
+                db, scan, output.get("discovered_issues") or []
+            )
+
+        status = scan.devin_status
+        # A scan has no PR to wait on: any terminal or waiting status once the
+        # structured output has arrived means the audit is done.
+        if status == "error":
+            scan.state = "failed"
+            scan.completed_at = int(time.time())
+        elif status == "exit" or (output and status in ("suspended", "running") and scan.devin_status_detail == "waiting_for_user"):
+            scan.state = "completed"
+            scan.completed_at = int(time.time())
+
+        scan.touch()
+        db.commit()
+
+    @staticmethod
+    def _capture_scan_findings(db, scan: RepoScan, findings: list[dict]) -> int:
+        """Route scan findings into the same human-review queue as remediation
+        side-discoveries; returns the number attributed to this scan so far."""
+        for finding in findings:
+            title = (finding.get("title") or "").strip()
+            if not title:
+                continue
+            duplicate = db.scalar(
+                select(DiscoveredIssue).where(
+                    DiscoveredIssue.repo_full_name == scan.repo_full_name,
+                    DiscoveredIssue.title == title,
+                )
+            )
+            if duplicate is not None:
+                continue
+            db.add(
+                DiscoveredIssue(
+                    remediation_id=0,
+                    scan_id=scan.id,
+                    repo_full_name=scan.repo_full_name,
+                    source_issue_number=0,
+                    title=title,
+                    description=finding.get("description", ""),
+                    severity=finding.get("severity", "medium"),
+                )
+            )
+        db.flush()
+        return db.scalar(
+            select(func.count()).select_from(DiscoveredIssue).where(DiscoveredIssue.scan_id == scan.id)
+        ) or 0
 
     @staticmethod
     def _capture_discovered_issues(db, record: Remediation, findings: list[dict]) -> None:

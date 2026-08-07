@@ -57,6 +57,32 @@ REMEDIATION_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
+# Contract for a proactive repository scan: findings only, no code changes.
+SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "summary": {
+            "type": "string",
+            "description": "Two or three sentences on the overall health of the areas inspected.",
+        },
+        "discovered_issues": {
+            "type": "array",
+            "description": "Concrete, reproducible defects found during the scan, ordered by severity.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+                },
+                "required": ["title", "description"],
+            },
+        },
+    },
+    "required": ["summary", "discovered_issues"],
+}
+
+
 class DevinClientProtocol(Protocol):
     async def create_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def get_session(self, session_id: str) -> dict[str, Any]: ...
@@ -113,6 +139,10 @@ def build_remediation_prompt(repo: str, issue_number: int, title: str, body: str
         "1. Reproduce and root-cause the issue.\n"
         "2. Implement a minimal, well-scoped fix following the repository's conventions.\n"
         "3. Run relevant tests/linting to validate the fix.\n"
+        "   If the fix is user-facing (UI, chart rendering, exports), also verify it "
+        "visually and embed the evidence — before/after screenshots or a short screen "
+        "recording of the fixed behavior — directly in the pull request description, "
+        "so a reviewer can see the fix proven without checking out the branch.\n"
         "4. Open a pull request that references the issue (e.g. 'Fixes #"
         f"{issue_number}').\n"
         "5. Fill in the structured output with your outcome, root cause, the PR URL, and "
@@ -123,4 +153,26 @@ def build_remediation_prompt(repo: str, issue_number: int, title: str, body: str
         "discovered_issues — do not fix it and do not file it yourself.\n"
         "If you cannot reproduce or are blocked, say so honestly in the structured "
         "output rather than forcing a change."
+    )
+
+
+def build_scan_prompt(repo: str) -> str:
+    return (
+        f"You are performing a proactive defect scan of the repository {repo}.\n\n"
+        "This is a read-only audit: do NOT change any code, do NOT open pull "
+        "requests, and do NOT file issues.\n\n"
+        "Instructions:\n"
+        "1. Clone the repository and study its highest-traffic areas: recently "
+        "changed modules, error handling, data serialization, and anything with "
+        "existing bug-report history.\n"
+        "2. Look for concrete, reproducible defects: broken edge cases, silent "
+        "error swallowing, stale caches, race conditions, incorrect calculations.\n"
+        "3. For each defect, verify it against the actual code before reporting — "
+        "no speculative or stylistic findings.\n"
+        "4. Fill in the structured output: a short overall summary plus a "
+        "discovered_issues list with a title, a description precise enough for an "
+        "engineer to act on (file paths, functions, reproduction sketch), and a "
+        "severity.\n"
+        "Report at most 5 findings, ordered by severity. An empty list is a valid "
+        "and honest result."
     )

@@ -18,6 +18,8 @@ export default function EngineeringView() {
   const [repos, setRepos] = useState([])
   const [rows, setRows] = useState([])
   const [findings, setFindings] = useState([])
+  const [scans, setScans] = useState([])
+  const [scanError, setScanError] = useState('')
   const [open, setOpen] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -28,6 +30,7 @@ export default function EngineeringView() {
     fetch('/api/repos').then((r) => r.json()).then(setRepos).catch(() => {})
     fetch('/api/remediations').then((r) => r.json()).then(setRows).catch(() => {})
     fetch('/api/discovered-issues').then((r) => r.json()).then(setFindings).catch(() => {})
+    fetch('/api/scans').then((r) => r.json()).then(setScans).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -78,6 +81,16 @@ export default function EngineeringView() {
   const removeRepo = async (r) => {
     if (!window.confirm(`Disconnect ${r.full_name}? Historical remediations are kept.`)) return
     await fetch(`/api/repos/${r.id}`, { method: 'DELETE' })
+    loadAll()
+  }
+
+  const startScan = async (r) => {
+    setScanError('')
+    const res = await fetch(`/api/repos/${r.id}/scan`, { method: 'POST' })
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}))
+      setScanError(typeof detail.detail === 'string' ? detail.detail : 'Could not start the scan.')
+    }
     loadAll()
   }
 
@@ -169,6 +182,14 @@ export default function EngineeringView() {
                 <td>{r.baseline_engineer_hours_per_issue}</td>
                 <td><span className={`badge ${r.enabled ? 'ok' : 'failed'}`}>{r.enabled ? 'active' : 'paused'}</span></td>
                 <td className="row-actions">
+                  <button
+                    className="btn ghost"
+                    disabled={scans.some((s) => s.repo === r.full_name && (s.state === 'queued' || s.state === 'running'))}
+                    title="Ask Devin to proactively audit this repository for defects. Findings land in the review queue below — nothing is changed or filed automatically."
+                    onClick={() => startScan(r)}
+                  >
+                    {scans.some((s) => s.repo === r.full_name && (s.state === 'queued' || s.state === 'running')) ? 'Scanning…' : 'Scan for issues'}
+                  </button>
                   <button className="btn ghost" onClick={() => editRepo(r)}>Edit</button>
                   <button className="btn ghost danger" onClick={() => removeRepo(r)}>Disconnect</button>
                 </td>
@@ -181,14 +202,37 @@ export default function EngineeringView() {
         </table>
       </div>
 
+      {scanError && <p className="form-error">{scanError}</p>}
+
+      {scans.length > 0 && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <p className="hint" style={{ marginBottom: 8 }}>Proactive scans — read-only Devin audits of a connected repository; findings feed the review queue below.</p>
+          <ul className="scan-list">
+            {scans.slice(0, 5).map((s) => (
+              <li key={s.id} className="scan-row">
+                <span className={`badge ${s.state === 'completed' ? 'ok' : s.state === 'failed' ? 'failed' : 'running'}`}>{s.state}</span>
+                <span className="scan-repo">{s.repo}</span>
+                <span className="meta">
+                  {s.state === 'completed' ? `${s.findings_count} finding${s.findings_count === 1 ? '' : 's'}` : ''}
+                  {s.summary ? ` — ${s.summary}` : ''}
+                </span>
+                {s.session_url && <a href={s.session_url} target="_blank" rel="noreferrer">session</a>}
+                <span className="meta">{ts(s.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="section-head" style={{ marginTop: 40 }}>
         <h2 className="section-title">Findings proposed by Devin</h2>
         {proposed.length > 0 && <span className="badge awaiting_review">{proposed.length} awaiting review</span>}
       </div>
       <div className="card">
         <p className="hint" style={{ marginBottom: 10 }}>
-          Defects Devin noticed while investigating something else. Approving opens a prefilled GitHub
-          issue for you to file — the agent never files issues on its own.
+          Defects Devin surfaced — noticed while remediating something else, or found by a
+          proactive scan. Approving opens a prefilled GitHub issue for you to file; the agent
+          never files issues on its own.
         </p>
         <ul className="finding-list">
           {proposed.map((f) => (
@@ -198,7 +242,7 @@ export default function EngineeringView() {
                   <span className={`badge sev-${f.severity}`}>{f.severity}</span> {f.title}
                 </div>
                 <div className="finding-desc">{f.description}</div>
-                <div className="meta">Found while remediating {f.repo}#{f.source_issue_number} · {ts(f.created_at)}</div>
+                <div className="meta">{f.scan_id ? `Found by a proactive scan of ${f.repo}` : `Found while remediating ${f.repo}#${f.source_issue_number}`} · {ts(f.created_at)}</div>
               </div>
               <div className="finding-actions">
                 <button className="btn primary" onClick={() => reviewFinding(f, 'approve')}>Approve &amp; file</button>
@@ -216,7 +260,7 @@ export default function EngineeringView() {
                 <li key={f.id} className="finding dim">
                   <div className="finding-main">
                     <div className="finding-title">{f.title}</div>
-                    <div className="meta">{f.status} · {f.repo}#{f.source_issue_number}</div>
+                    <div className="meta">{f.status} · {f.scan_id ? `${f.repo} (scan)` : `${f.repo}#${f.source_issue_number}`}</div>
                   </div>
                 </li>
               ))}
