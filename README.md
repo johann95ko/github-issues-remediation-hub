@@ -58,9 +58,10 @@ open http://localhost:8000     # macOS; on Linux use xdg-open, or just open it i
 > (`jq` and `openssl` are the only prerequisites for the simulator script.)
 
 What you should see:
-1. Each `simulate_issue.sh` call returns `{"status": "accepted", ...}` with a
-   session ID — the webhook was verified, deduplicated, and a (simulated)
-   Devin session started.
+1. Each `simulate_issue.sh` call returns `{"status": "accepted", ...}` — the
+   webhook was verified, deduplicated, and queued; a (simulated) Devin session
+   launches within a second or two (the launch happens off-request so GitHub
+   always gets an immediate acknowledgment).
 2. **Executive Overview** shows the sessions under *Active remediations*;
    after 1–2 minutes they complete and the ROI, weekly-impact and throughput
    figures populate.
@@ -170,8 +171,13 @@ ROI model inputs are explicit and tunable via `USD_PER_ACU` and
   (`structured_output_schema`), which is what turns agent work into report rows.
 - **Budget caps**: `max_acu_limit` on every session — a runaway agent stops at
   the cap, never at the credit card.
-- **Deduplication**: webhook redeliveries and re-labels can't double-spend; one
-  active remediation per issue, enforced against the database.
+- **Deduplication**: webhook redeliveries and re-labels can't double-spend —
+  GitHub delivery GUIDs are recorded exactly-once, and at most one active
+  remediation per issue is enforced against the database.
+- **Ingestion queue**: the webhook handler persists the event and returns 202
+  immediately; a bounded worker pool creates Devin sessions off-request, so a
+  burst of labeled issues never trips GitHub's delivery timeout. Queued
+  launches survive restarts (re-queued from the database on boot).
 - **Reconciliation over memory**: the poller re-derives all state from
   `GET /sessions`, so a crashed hub resumes exactly where it left off.
 - **Bounded autonomy**: a stuck session gets exactly one automated nudge, then
@@ -206,6 +212,32 @@ system with a real Devin session:
 
 All issues carrying the trigger label:
 https://github.com/johann95ko/superset/issues?q=label%3Adevin-fix
+
+## Production hardening roadmap
+
+The current build is sized for a single team monitoring a handful of
+repositories. Already in place: an ingestion queue between the webhook and the
+Devin API, delivery-GUID idempotency, a concurrent poller, SQLite in WAL mode
+with a busy timeout, SQL-side dashboard aggregations, and a paginated audit
+API. What's deliberately deferred, in priority order for real multi-user use:
+
+1. **Authentication & authorization** — there is no auth today: anyone who can
+   reach the port can read the dashboard and, worse, modify repository config
+   (including flipping a repo to `auto_merge`). Front it with an OAuth proxy
+   (e.g. oauth2-proxy) or add session auth, with engineering-role gating on
+   all write endpoints. **Do this before exposing the hub beyond localhost.**
+2. **Approval audit trail** — record who approved/dismissed each finding and
+   who changed repository policy, once identities exist.
+3. **Postgres** — a connection-string change thanks to SQLAlchemy, needed only
+   when running more than one replica; adopt Alembic for migrations at the
+   same time.
+4. **Horizontal scaling** — split the poller into its own worker process and
+   move the ingest queue to an external broker so the API tier can run N
+   replicas behind a load balancer.
+5. **Push updates** — replace 15s dashboard polling with SSE/WebSocket when
+   viewer count grows.
+6. **Multi-tenancy** — per-organization isolation of repos, credentials, and
+   dashboards; a product decision rather than a hardening step.
 
 ## Related
 

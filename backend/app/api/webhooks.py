@@ -7,10 +7,12 @@ import hmac
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import get_db
+from app.models.webhook_delivery import WebhookDelivery
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,18 +35,36 @@ def _verify_signature(secret: str, body: bytes, signature_header: str | None) ->
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
 
-@router.post("/webhooks/github")
+def _record_delivery(db: Session, delivery_id: str | None) -> bool:
+    """Returns False if this delivery GUID was already processed. The unique
+    index makes this race-safe: whoever commits first wins."""
+    if not delivery_id:
+        return True
+    db.add(WebhookDelivery(delivery_id=delivery_id))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
+    return True
+
+
+@router.post("/webhooks/github", status_code=202)
 async def github_webhook(
     request: Request,
     db: Session = Depends(get_db),
     x_hub_signature_256: str | None = Header(default=None),
     x_github_event: str | None = Header(default=None),
+    x_github_delivery: str | None = Header(default=None),
 ):
     body = await request.body()
     _verify_signature(get_settings().github_webhook_secret, body, x_hub_signature_256)
 
     if x_github_event != "issues":
         return {"status": "ignored", "reason": f"event {x_github_event} not handled"}
+
+    if not _record_delivery(db, x_github_delivery):
+        return {"status": "duplicate", "reason": "delivery already processed"}
 
     payload = await request.json()
     action = payload.get("action", "")
@@ -60,7 +80,7 @@ async def github_webhook(
     if repo is None:
         return {"status": "ignored", "reason": "repo not monitored or labels do not qualify"}
 
-    record = await orchestrator.start_remediation(
+    record = orchestrator.accept_remediation(
         db,
         repo,
         issue_number=issue.get("number", 0),
@@ -71,6 +91,10 @@ async def github_webhook(
     )
     if record is None:
         return {"status": "duplicate", "reason": "active remediation already exists"}
+
+    # Launch happens off-request via the ingest queue so GitHub gets its 202
+    # within the delivery timeout even under burst or Devin API backoff.
+    request.app.state.ingest_queue.submit(record.id)
     return {
         "status": "accepted",
         "remediation_id": record.id,

@@ -23,6 +23,10 @@ from app.services.devin_client import DevinClientProtocol
 
 logger = logging.getLogger(__name__)
 
+# Bounded fan-out: enough parallelism that a cycle over hundreds of active
+# sessions finishes well inside the poll interval, without hammering the API.
+MAX_CONCURRENT_POLLS = 10
+
 # One automated nudge for a stuck session, then a human takes over. More than
 # that and two automated systems end up talking to each other.
 MAX_NUDGES = 1
@@ -56,38 +60,47 @@ class Poller:
             await asyncio.sleep(interval)
 
     async def reconcile_once(self) -> None:
-        db = SessionLocal()
-        try:
+        # Only ids are read up front; each sync task opens its own session so
+        # concurrent tasks never share an ORM Session (they aren't task-safe).
+        with SessionLocal() as db:
             # Escalated rows whose underlying session is still live are
             # re-synced too, so a mis-escalation self-heals once the session
             # reports a PR/outcome.
-            active = list(
-                db.scalars(
-                    select(Remediation).where(
-                        Remediation.session_id != "",
-                        (Remediation.state == "running")
-                        | (
-                            (Remediation.state == "escalated")
-                            & (Remediation.devin_status == "running")
-                        ),
-                    )
+            record_ids = db.scalars(
+                select(Remediation.id).where(
+                    Remediation.session_id != "",
+                    (Remediation.state == "running")
+                    | (
+                        (Remediation.state == "escalated")
+                        & (Remediation.devin_status == "running")
+                    ),
                 )
-            )
-            for record in active:
-                await self._sync_record(db, record)
+            ).all()
+            scan_ids = db.scalars(
+                select(RepoScan.id).where(
+                    RepoScan.session_id != "",
+                    RepoScan.state == "running",
+                )
+            ).all()
 
-            scans = list(
-                db.scalars(
-                    select(RepoScan).where(
-                        RepoScan.session_id != "",
-                        RepoScan.state == "running",
-                    )
-                )
-            )
-            for scan in scans:
-                await self._sync_scan(db, scan)
-        finally:
-            db.close()
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_POLLS)
+
+        async def sync_one(record_id: int, is_scan: bool) -> None:
+            async with semaphore:
+                with SessionLocal() as db:
+                    if is_scan:
+                        scan = db.get(RepoScan, record_id)
+                        if scan is not None:
+                            await self._sync_scan(db, scan)
+                    else:
+                        record = db.get(Remediation, record_id)
+                        if record is not None:
+                            await self._sync_record(db, record)
+
+        await asyncio.gather(
+            *(sync_one(rid, False) for rid in record_ids),
+            *(sync_one(sid, True) for sid in scan_ids),
+        )
 
     async def _sync_record(self, db, record: Remediation) -> None:
         try:

@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.core.db import init_db
 from app.services.demo_client import DemoDevinClient
 from app.services.devin_client import DevinClient
+from app.services.ingest import IngestQueue
 from app.services.orchestrator import Orchestrator
 from app.services.poller import Poller
 
@@ -37,12 +38,15 @@ async def lifespan(app: FastAPI):
     init_db()
     devin = _build_devin_client()
     app.state.orchestrator = Orchestrator(devin)
+    app.state.ingest_queue = IngestQueue(app.state.orchestrator)
+    app.state.ingest_queue.start()
     poller = Poller(devin)
     poller.start()
     logger.info(
         "Remediation hub started (demo_mode=%s)", isinstance(devin, DemoDevinClient)
     )
     yield
+    await app.state.ingest_queue.stop()
     await poller.stop()
     if isinstance(devin, DevinClient):
         await devin.close()

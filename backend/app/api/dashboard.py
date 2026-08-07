@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,9 +29,17 @@ def overview(db: Session = Depends(get_db)):
 
 
 @router.get("/remediations")
-def remediations(db: Session = Depends(get_db)):
-    """Full audit trail for the technical view."""
-    rows = db.scalars(select(Remediation).order_by(Remediation.created_at.desc()))
+def remediations(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+    before: int | None = Query(default=None, description="created_at cursor"),
+):
+    """Audit trail for the technical view, newest first. `before` pages
+    backward through history so the payload stays bounded as it grows."""
+    query = select(Remediation).order_by(Remediation.created_at.desc()).limit(limit)
+    if before is not None:
+        query = query.where(Remediation.created_at < before)
+    rows = db.scalars(query)
     return [
         {
             "id": r.id,

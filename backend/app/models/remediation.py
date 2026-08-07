@@ -23,6 +23,9 @@ class Remediation(Base):
     issue_title: Mapped[str] = mapped_column(Text, default="")
     issue_url: Mapped[str] = mapped_column(Text, default="")
     issue_labels: Mapped[str] = mapped_column(Text, default="")  # comma separated
+    # Kept so a queued launch (or a retry) can rebuild the full prompt without
+    # the original webhook payload.
+    issue_body: Mapped[str] = mapped_column(Text, default="")
 
     session_id: Mapped[str] = mapped_column(String(100), default="", index=True)
     session_url: Mapped[str] = mapped_column(Text, default="")
@@ -52,11 +55,14 @@ class Remediation(Base):
     # don't silently rewrite historical ROI numbers.
     baseline_hours: Mapped[float] = mapped_column(Float, default=4.0)
     merge_policy: Mapped[str] = mapped_column(String(20), default="review")
+    max_acus: Mapped[int] = mapped_column(Integer, default=15)
 
     # How many automated unblock nudges we've sent; bounded to avoid loops.
     nudge_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    created_at: Mapped[int] = mapped_column(Integer, default=lambda: int(time.time()))
+    created_at: Mapped[int] = mapped_column(
+        Integer, default=lambda: int(time.time()), index=True
+    )
     updated_at: Mapped[int] = mapped_column(Integer, default=lambda: int(time.time()))
     completed_at: Mapped[int] = mapped_column(Integer, default=0)
 

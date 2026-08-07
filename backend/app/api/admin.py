@@ -9,6 +9,7 @@ import urllib.parse
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -61,7 +62,13 @@ def add_repo(body: RepoIn, db: Session = Depends(get_db)):
         enabled=body.enabled,
     )
     db.add(repo)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two concurrent connects racing past the existence check; the unique
+        # index on full_name is the arbiter.
+        db.rollback()
+        raise HTTPException(409, f"{body.full_name} is already connected")
     return _repo_out(repo)
 
 

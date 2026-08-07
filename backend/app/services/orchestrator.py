@@ -52,7 +52,7 @@ class Orchestrator:
             return None
         return repo
 
-    async def start_remediation(
+    def accept_remediation(
         self,
         db: Session,
         repo: MonitoredRepo,
@@ -62,6 +62,9 @@ class Orchestrator:
         issue_url: str,
         labels: list[str],
     ) -> Remediation | None:
+        """Persist a queued remediation (dedupe included) without calling the
+        Devin API — the ingest queue launches it. Keeps the webhook response
+        inside GitHub's delivery timeout regardless of API latency."""
         existing = db.scalar(
             select(Remediation).where(
                 Remediation.repo_full_name == repo.full_name,
@@ -84,20 +87,32 @@ class Orchestrator:
             issue_title=issue_title,
             issue_url=issue_url,
             issue_labels=",".join(labels),
+            issue_body=issue_body,
             baseline_hours=repo.baseline_engineer_hours_per_issue,
             merge_policy=repo.merge_policy,
+            max_acus=repo.max_acu_per_session,
             state="queued",
         )
         db.add(record)
         db.commit()
+        return record
 
+    async def launch_remediation(self, db: Session, record: Remediation) -> None:
         payload = {
             "prompt": build_remediation_prompt(
-                repo.full_name, issue_number, issue_title, issue_body, issue_url
+                record.repo_full_name,
+                record.issue_number,
+                record.issue_title,
+                record.issue_body,
+                record.issue_url,
             ),
-            "title": f"Remediate {repo.full_name}#{issue_number}: {issue_title[:80]}",
-            "tags": ["auto-remediation", f"issue-{issue_number}", repo.full_name.replace("/", "--")],
-            "max_acu_limit": repo.max_acu_per_session,
+            "title": f"Remediate {record.repo_full_name}#{record.issue_number}: {record.issue_title[:80]}",
+            "tags": [
+                "auto-remediation",
+                f"issue-{record.issue_number}",
+                record.repo_full_name.replace("/", "--"),
+            ],
+            "max_acu_limit": record.max_acus,
             "structured_output_required": True,
             "structured_output_schema": REMEDIATION_OUTPUT_SCHEMA,
             # Disposable sessions: the PR is the artifact; keeping VMs resumable
@@ -108,12 +123,14 @@ class Orchestrator:
         try:
             session = await self._devin.create_session(payload)
         except Exception:
-            logger.exception("Failed to create Devin session for issue #%s", issue_number)
+            logger.exception(
+                "Failed to create Devin session for issue #%s", record.issue_number
+            )
             record.state = "failed"
             record.outcome = "session_create_error"
             record.touch()
             db.commit()
-            return record
+            return
 
         record.session_id = session["session_id"]
         record.session_url = session.get("url", "")
@@ -121,8 +138,9 @@ class Orchestrator:
         record.devin_status = session.get("status", "running")
         record.touch()
         db.commit()
-        logger.info("Started session %s for issue #%s", record.session_id, issue_number)
-        return record
+        logger.info(
+            "Started session %s for issue #%s", record.session_id, record.issue_number
+        )
 
     async def start_scan(self, db: Session, repo: MonitoredRepo) -> RepoScan | None:
         existing = db.scalar(

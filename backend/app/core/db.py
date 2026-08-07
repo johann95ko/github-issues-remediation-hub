@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -27,7 +27,19 @@ def _make_engine():
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False: FastAPI handlers and the poller share the pool
     # across threads; SQLAlchemy's pooling serializes access safely.
-    return create_engine(url, connect_args={"check_same_thread": False})
+    eng = create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
+    if url.startswith("sqlite"):
+        # WAL lets readers proceed during writes; busy_timeout makes concurrent
+        # writers wait instead of raising "database is locked".
+        @event.listens_for(eng, "connect")
+        def _sqlite_pragmas(dbapi_conn, _record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+
+    return eng
 
 
 engine = _make_engine()
@@ -35,7 +47,13 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db() -> None:
-    from app.models import discovered_issue, remediation, repo, repo_scan  # noqa: F401
+    from app.models import (  # noqa: F401
+        discovered_issue,
+        remediation,
+        repo,
+        repo_scan,
+        webhook_delivery,
+    )
 
     Base.metadata.create_all(engine)
     _migrate_columns()
@@ -51,6 +69,8 @@ def _migrate_columns() -> None:
         "remediations": {
             "problem_summary": "TEXT DEFAULT ''",
             "fix_summary": "TEXT DEFAULT ''",
+            "issue_body": "TEXT DEFAULT ''",
+            "max_acus": "INTEGER DEFAULT 15",
         },
         "discovered_issues": {
             "scan_id": "INTEGER DEFAULT 0",
@@ -64,6 +84,13 @@ def _migrate_columns() -> None:
             for column, ddl in columns.items():
                 if column not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        # create_all doesn't add indexes to pre-existing tables either.
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_remediations_created_at "
+                "ON remediations (created_at)"
+            )
+        )
 
 
 def _seed_repos_from_yaml() -> None:
