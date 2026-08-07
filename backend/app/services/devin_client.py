@@ -28,11 +28,32 @@ REMEDIATION_OUTPUT_SCHEMA: dict[str, Any] = {
             "enum": ["fixed", "partial", "cannot_reproduce", "blocked"],
         },
         "pr_url": {"type": "string"},
+        "problem_summary": {
+            "type": "string",
+            "description": "One sentence, plain language: what was broken from the user's perspective.",
+        },
+        "fix_summary": {
+            "type": "string",
+            "description": "One sentence: what the fix changes and why it is safe.",
+        },
         "root_cause": {"type": "string"},
         "tests_run": {"type": "string"},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+        "discovered_issues": {
+            "type": "array",
+            "description": "Distinct defects noticed during the investigation that are NOT the issue being fixed. Only report concrete, reproducible problems.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+                },
+                "required": ["title", "description"],
+            },
+        },
     },
-    "required": ["issue_number", "outcome", "root_cause"],
+    "required": ["issue_number", "outcome", "problem_summary", "fix_summary", "root_cause"],
 }
 
 
@@ -94,7 +115,12 @@ def build_remediation_prompt(repo: str, issue_number: int, title: str, body: str
         "3. Run relevant tests/linting to validate the fix.\n"
         "4. Open a pull request that references the issue (e.g. 'Fixes #"
         f"{issue_number}').\n"
-        "5. Fill in the structured output with your outcome, root cause, and the PR URL.\n"
+        "5. Fill in the structured output with your outcome, root cause, the PR URL, and "
+        "one-sentence problem_summary / fix_summary written for a reviewer skimming a list.\n"
+        "6. If, during the investigation, you find a concrete, distinct defect that is NOT "
+        "this issue (e.g. the bug you were sent to fix is a symptom of a different problem, "
+        "or you notice an adjacent bug in the code you touched), report it in "
+        "discovered_issues — do not fix it and do not file it yourself.\n"
         "If you cannot reproduce or are blocked, say so honestly in the structured "
         "output rather than forcing a change."
     )

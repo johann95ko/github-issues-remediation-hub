@@ -72,38 +72,46 @@ docker compose up --build -d
 
 ## Monitoring more repositories
 
-Repository onboarding is configuration, not code — append to
-[`config/repos.yaml`](config/repos.yaml):
+Repositories are managed from the **Engineering** view of the dashboard:
+"Connect repository" adds a repo with its trigger labels, merge policy, ACU
+budget cap and baseline hours — no config file edits, no redeploy. Then point
+the repo's GitHub webhook (Issues events) at `/webhooks/github`.
 
-```yaml
-repositories:
-  - full_name: your-org/another-repo
-    trigger_labels: [devin-fix]
-    merge_policy: review        # or auto_merge for low-scrutiny repos
-    max_acu_per_session: 15     # hard compute budget per remediation
-    baseline_engineer_hours_per_issue: 4
-```
+[`config/repos.yaml`](config/repos.yaml) exists only as a bootstrap seed: it
+populates an empty database on first boot; after that the UI owns the config.
 
 `merge_policy` is the scrutiny dial: `review` requires a human to approve every
 PR; `auto_merge` lets PRs land automatically once CI passes.
+
+## Devin-proposed findings
+
+While remediating one issue, Devin often notices a *different* concrete defect
+(the reported bug is a symptom of a deeper problem, or an adjacent bug in the
+same code). The structured-output contract asks it to report these as
+`discovered_issues` rather than fixing or filing them itself. Findings land in
+the Engineering view as proposals with severity; a human either dismisses one
+or approves it — approval opens a prefilled GitHub "new issue" form, so the
+human stays the author of record and the agent never files issues
+unsupervised.
 
 ## The dashboard — "how do I know this is working?"
 
 `http://localhost:8000` serves two views for two audiences:
 
 **Executive Overview** (default) answers, in reading order:
-1. *Is it worth it?* — value delivered vs. compute cost, ROI multiple, success
-   rate. Benefit is only claimed for remediations that produced a reviewable
-   PR; failures earn zero, keeping the ROI honest.
-2. *What did it resolve this week?* — count + top fixes with root causes.
-3. *What is it doing right now?* — live agents, what each is working on, spend so far.
-4. *Where is my attention needed?* — PRs waiting on review (ranked by age) and
+1. *Investment & return* — estimated value delivered vs. compute cost, ROI
+   multiple, resolution rate. Benefit is only claimed for remediations that
+   produced a reviewable PR; failures earn zero, keeping the ROI honest.
+2. *Impact delivered (last 7 days)* — count + top fixes with what each changed.
+3. *Active remediations* — live agents, what each is working on, spend so far.
+4. *Requires attention* — PRs waiting on review (ranked by age) and
    escalations needing an engineer. This is the "where to put resources" queue.
 
-**Engineering** view: connected repositories with their policies, and the full
-per-remediation audit trail — Devin session link, raw status, root cause,
-tests run, confidence, PR state — so a human SWE can judge whether each fix
-makes sense.
+**Engineering** view: repository connection management, Devin-proposed
+findings awaiting review, and the full per-remediation audit trail. Each row
+leads with a one-line *problem → fix* summary so a reviewer can triage without
+opening the PR; expanding a row reveals the Devin session link, raw status,
+root cause, tests run and confidence.
 
 ROI model inputs are explicit and tunable via `USD_PER_ACU` and
 `ENGINEER_USD_PER_HOUR` environment variables.
@@ -111,7 +119,8 @@ ROI model inputs are explicit and tunable via `USD_PER_ACU` and
 ## Design decisions
 
 - **Structured output contract**: every session must report
-  `{outcome, root_cause, tests_run, confidence, pr_url}` against a JSON schema
+  `{outcome, problem_summary, fix_summary, root_cause, tests_run, confidence,
+  pr_url, discovered_issues}` against a JSON schema
   (`structured_output_schema`), which is what turns agent work into report rows.
 - **Budget caps**: `max_acu_limit` on every session — a runaway agent stops at
   the cap, never at the credit card.
@@ -128,16 +137,18 @@ ROI model inputs are explicit and tunable via `USD_PER_ACU` and
 
 ```
 backend/app/
-  api/         webhook ingress + dashboard API
-  core/        config (env + repos.yaml), database
-  models/      the Remediation audit-log row
+  api/         webhook ingress, dashboard API, repo + findings management API
+  core/        config (env + bootstrap repos.yaml), database
+  models/      Remediation audit rows, monitored repos, discovered issues
   services/    Devin client, demo simulator, orchestrator, poller, analytics
 frontend/      React dashboard (Vite), Apache-inspired design language
-config/        repos.yaml — monitored repositories and policies
+config/        repos.yaml — first-boot seed for monitored repositories
 scripts/       simulate_issue.sh — replay a GitHub webhook locally
 ```
 
 ## Related
 
-- Remediated repository (fork): https://github.com/johann95ko/superset
+- Remediated repository (fork): https://github.com/johann95ko/superset —
+  remediated issues are labeled `devin-fix`
+  ([view them](https://github.com/johann95ko/superset/issues?q=label%3Adevin-fix))
 - Devin API docs: https://docs.devin.ai/api-reference/overview

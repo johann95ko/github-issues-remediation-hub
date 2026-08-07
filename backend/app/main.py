@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.api import dashboard, webhooks
+from app.api import admin, dashboard, webhooks
 from app.core.config import get_settings
 from app.core.db import init_db
 from app.services.demo_client import DemoDevinClient
@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Devin Remediation Hub", lifespan=lifespan)
 app.include_router(webhooks.router)
 app.include_router(dashboard.router)
+app.include_router(admin.router)
 
 # The built frontend is copied here by the Docker build; in local dev the
 # Vite dev server proxies /api instead.

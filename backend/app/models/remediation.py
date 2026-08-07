@@ -36,6 +36,10 @@ class Remediation(Base):
     devin_status_detail: Mapped[str] = mapped_column(String(60), default="")
 
     outcome: Mapped[str] = mapped_column(String(40), default="")  # from structured output
+    # One-line "what was broken" / "what the fix does" pair — shown inline in
+    # the audit trail so a reviewer can triage without opening the PR.
+    problem_summary: Mapped[str] = mapped_column(Text, default="")
+    fix_summary: Mapped[str] = mapped_column(Text, default="")
     root_cause: Mapped[str] = mapped_column(Text, default="")
     tests_run: Mapped[str] = mapped_column(Text, default="")
     confidence: Mapped[str] = mapped_column(String(20), default="")

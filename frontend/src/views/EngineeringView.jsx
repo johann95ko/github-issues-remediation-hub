@@ -1,39 +1,165 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 const ts = (t) => (t ? new Date(t * 1000).toLocaleString() : '—')
 
-// The technical audit surface: connected repos + full per-remediation trail
-// (session link, raw Devin status, root cause, tests, PR). Expandable rows
-// keep the table scannable while preserving depth on demand.
+const EMPTY_FORM = {
+  full_name: '',
+  trigger_labels: 'devin-fix',
+  merge_policy: 'review',
+  max_acu_per_session: 15,
+  baseline_engineer_hours_per_issue: 4,
+  enabled: true,
+}
+
+// The technical operations surface: repository connections are managed here
+// (not in config files) so onboarding a repo never requires a redeploy, and
+// the audit trail leads with problem→fix so reviewers triage without clicking.
 export default function EngineeringView() {
   const [repos, setRepos] = useState([])
   const [rows, setRows] = useState([])
+  const [findings, setFindings] = useState([])
   const [open, setOpen] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [editingId, setEditingId] = useState(null)
+  const [formError, setFormError] = useState('')
+
+  const loadAll = useCallback(() => {
+    fetch('/api/repos').then((r) => r.json()).then(setRepos).catch(() => {})
+    fetch('/api/remediations').then((r) => r.json()).then(setRows).catch(() => {})
+    fetch('/api/discovered-issues').then((r) => r.json()).then(setFindings).catch(() => {})
+  }, [])
 
   useEffect(() => {
-    fetch('/api/repos').then((r) => r.json()).then(setRepos).catch(() => {})
-    const load = () => fetch('/api/remediations').then((r) => r.json()).then(setRows).catch(() => {})
-    load()
-    const timer = setInterval(load, 15000)
+    loadAll()
+    const timer = setInterval(loadAll, 15000)
     return () => clearInterval(timer)
-  }, [])
+  }, [loadAll])
+
+  const submitRepo = async (e) => {
+    e.preventDefault()
+    setFormError('')
+    const body = {
+      ...form,
+      trigger_labels: form.trigger_labels.split(',').map((s) => s.trim()).filter(Boolean),
+      max_acu_per_session: Number(form.max_acu_per_session),
+      baseline_engineer_hours_per_issue: Number(form.baseline_engineer_hours_per_issue),
+    }
+    const res = await fetch(editingId ? `/api/repos/${editingId}` : '/api/repos', {
+      method: editingId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}))
+      setFormError(typeof detail.detail === 'string' ? detail.detail : 'Check the repository name (owner/name) and values.')
+      return
+    }
+    setShowForm(false)
+    setForm(EMPTY_FORM)
+    setEditingId(null)
+    loadAll()
+  }
+
+  const editRepo = (r) => {
+    setForm({
+      full_name: r.full_name,
+      trigger_labels: r.trigger_labels.join(', '),
+      merge_policy: r.merge_policy,
+      max_acu_per_session: r.max_acu_per_session,
+      baseline_engineer_hours_per_issue: r.baseline_engineer_hours_per_issue,
+      enabled: r.enabled,
+    })
+    setEditingId(r.id)
+    setShowForm(true)
+    setFormError('')
+  }
+
+  const removeRepo = async (r) => {
+    if (!window.confirm(`Disconnect ${r.full_name}? Historical remediations are kept.`)) return
+    await fetch(`/api/repos/${r.id}`, { method: 'DELETE' })
+    loadAll()
+  }
+
+  const reviewFinding = async (finding, action) => {
+    const res = await fetch(`/api/discovered-issues/${finding.id}/${action}`, { method: 'POST' })
+    if (res.ok && action === 'approve') {
+      // Approval opens a prefilled GitHub issue form — the human stays the
+      // author of record for anything the agent proposed.
+      window.open(finding.file_url, '_blank', 'noreferrer')
+    }
+    loadAll()
+  }
+
+  const proposed = findings.filter((f) => f.status === 'proposed')
+  const reviewed = findings.filter((f) => f.status !== 'proposed')
 
   return (
     <>
-      <h2 className="section-title">Connected repositories</h2>
+      <div className="section-head">
+        <h2 className="section-title">Connected repositories</h2>
+        <button className="btn primary" onClick={() => { setShowForm(!showForm); setEditingId(null); setForm(EMPTY_FORM); setFormError('') }}>
+          {showForm && !editingId ? 'Cancel' : '+ Connect repository'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form className="card form-card" onSubmit={submitRepo}>
+          <div className="form-grid">
+            <label>
+              Repository (owner/name)
+              <input required value={form.full_name} placeholder="apache/superset"
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+            </label>
+            <label>
+              Trigger labels (comma separated)
+              <input value={form.trigger_labels}
+                onChange={(e) => setForm({ ...form, trigger_labels: e.target.value })} />
+            </label>
+            <label>
+              Merge policy
+              <select value={form.merge_policy} onChange={(e) => setForm({ ...form, merge_policy: e.target.value })}>
+                <option value="review">Human review required</option>
+                <option value="auto_merge">Auto-merge on green CI</option>
+              </select>
+            </label>
+            <label>
+              Budget cap (ACUs per session)
+              <input type="number" min="1" max="100" value={form.max_acu_per_session}
+                onChange={(e) => setForm({ ...form, max_acu_per_session: e.target.value })} />
+            </label>
+            <label>
+              Baseline engineer hours per issue
+              <input type="number" min="0" step="0.5" value={form.baseline_engineer_hours_per_issue}
+                onChange={(e) => setForm({ ...form, baseline_engineer_hours_per_issue: e.target.value })} />
+            </label>
+            <label className="checkline">
+              <input type="checkbox" checked={form.enabled}
+                onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+              Active (receive new events)
+            </label>
+          </div>
+          {formError && <p className="form-error">{formError}</p>}
+          <div className="form-actions">
+            <button className="btn primary" type="submit">{editingId ? 'Save changes' : 'Connect'}</button>
+            <span className="hint">Then point the repository's GitHub webhook (Issues events) at <code>/webhooks/github</code>.</span>
+          </div>
+        </form>
+      )}
+
       <div className="card">
         <table>
           <thead>
             <tr>
               <th>Repository</th><th>Trigger labels</th><th>Merge policy</th>
-              <th>ACU cap / session</th><th>Baseline hrs / issue</th>
+              <th>ACU cap</th><th>Baseline hrs</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {repos.map((r) => (
-              <tr key={r.full_name}>
+              <tr key={r.id}>
                 <td><a href={`https://github.com/${r.full_name}`} target="_blank" rel="noreferrer">{r.full_name}</a></td>
-                <td>{r.trigger_labels.join(', ')}</td>
+                <td>{r.trigger_labels.map((l) => <span key={l} className="chip">{l}</span>)}</td>
                 <td>
                   <span className={`badge ${r.merge_policy === 'auto_merge' ? 'ok' : 'awaiting_review'}`}>
                     {r.merge_policy === 'auto_merge' ? 'auto-merge on green CI' : 'human review required'}
@@ -41,22 +167,72 @@ export default function EngineeringView() {
                 </td>
                 <td>{r.max_acu_per_session}</td>
                 <td>{r.baseline_engineer_hours_per_issue}</td>
+                <td><span className={`badge ${r.enabled ? 'ok' : 'failed'}`}>{r.enabled ? 'active' : 'paused'}</span></td>
+                <td className="row-actions">
+                  <button className="btn ghost" onClick={() => editRepo(r)}>Edit</button>
+                  <button className="btn ghost danger" onClick={() => removeRepo(r)}>Disconnect</button>
+                </td>
               </tr>
             ))}
+            {repos.length === 0 && (
+              <tr><td colSpan={7} className="empty">No repositories connected yet — use "Connect repository" above.</td></tr>
+            )}
           </tbody>
         </table>
-        <p className="empty" style={{ marginTop: 10 }}>
-          To connect another repository, add an entry to <code>config/repos.yaml</code> and point its
-          GitHub webhook at <code>/webhooks/github</code>. No code changes required.
+      </div>
+
+      <div className="section-head">
+        <h2 className="section-title">Findings proposed by Devin</h2>
+        {proposed.length > 0 && <span className="badge awaiting_review">{proposed.length} awaiting review</span>}
+      </div>
+      <div className="card">
+        <p className="hint" style={{ marginBottom: 10 }}>
+          Defects Devin noticed while investigating something else. Approving opens a prefilled GitHub
+          issue for you to file — the agent never files issues on its own.
         </p>
+        <ul className="finding-list">
+          {proposed.map((f) => (
+            <li key={f.id} className="finding">
+              <div className="finding-main">
+                <div className="finding-title">
+                  <span className={`badge sev-${f.severity}`}>{f.severity}</span> {f.title}
+                </div>
+                <div className="finding-desc">{f.description}</div>
+                <div className="meta">Found while remediating {f.repo}#{f.source_issue_number} · {ts(f.created_at)}</div>
+              </div>
+              <div className="finding-actions">
+                <button className="btn primary" onClick={() => reviewFinding(f, 'approve')}>Approve &amp; file</button>
+                <button className="btn ghost" onClick={() => reviewFinding(f, 'dismiss')}>Dismiss</button>
+              </div>
+            </li>
+          ))}
+          {proposed.length === 0 && <li className="empty">No findings awaiting review.</li>}
+        </ul>
+        {reviewed.length > 0 && (
+          <details className="reviewed-findings">
+            <summary>{reviewed.length} previously reviewed</summary>
+            <ul className="finding-list">
+              {reviewed.map((f) => (
+                <li key={f.id} className="finding dim">
+                  <div className="finding-main">
+                    <div className="finding-title">{f.title}</div>
+                    <div className="meta">{f.status} · {f.repo}#{f.source_issue_number}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
 
       <h2 className="section-title">Remediation audit trail</h2>
       <div className="card">
-        <table>
+        <table className="audit">
           <thead>
             <tr>
-              <th>Issue</th><th>State</th><th>Outcome</th><th>PR</th><th>ACUs</th><th>Started</th>
+              <th style={{ width: '38%' }}>Issue</th>
+              <th style={{ width: '32%' }}>Problem → fix</th>
+              <th>State</th><th>PR</th><th>ACUs</th>
             </tr>
           </thead>
           <tbody>
@@ -68,20 +244,29 @@ export default function EngineeringView() {
                       {r.repo}#{r.issue_number}
                     </a>{' '}
                     {r.issue_title}
+                    <div className="meta">{ts(r.created_at)}</div>
+                  </td>
+                  <td className="summary-cell">
+                    {r.problem_summary
+                      ? (
+                        <>
+                          <div className="problem">{r.problem_summary}</div>
+                          <div className="fix">{r.fix_summary}</div>
+                        </>
+                      )
+                      : <span className="meta">{r.state === 'running' || r.state === 'queued' ? 'In progress…' : 'Not reported'}</span>}
                   </td>
                   <td><span className={`badge ${r.state}`}>{r.state.replace('_', ' ')}</span></td>
-                  <td>{r.outcome || '—'}</td>
                   <td>
                     {r.pr_url
                       ? <a href={r.pr_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{r.pr_state || 'view'}</a>
                       : '—'}
                   </td>
                   <td>{r.acus_consumed}</td>
-                  <td>{ts(r.created_at)}</td>
                 </tr>
                 {open === r.id && (
                   <tr className="detail-row">
-                    <td colSpan={6}>
+                    <td colSpan={5}>
                       <dl className="detail-grid">
                         <dt>Devin session</dt>
                         <dd>{r.session_url ? <a href={r.session_url} target="_blank" rel="noreferrer">{r.session_id}</a> : '—'}</dd>
@@ -104,7 +289,7 @@ export default function EngineeringView() {
               </React.Fragment>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="empty">No remediations yet. Label an issue in a monitored repo (or run the simulator) to begin.</td></tr>
+              <tr><td colSpan={5} className="empty">No remediations yet. Label an issue in a connected repo (or run the simulator) to begin.</td></tr>
             )}
           </tbody>
         </table>

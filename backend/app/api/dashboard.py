@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_repo_configs, get_settings
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.models.remediation import Remediation
 from app.services import analytics
@@ -46,6 +46,8 @@ def remediations(db: Session = Depends(get_db)):
             "devin_status": r.devin_status,
             "devin_status_detail": r.devin_status_detail,
             "outcome": r.outcome,
+            "problem_summary": r.problem_summary,
+            "fix_summary": r.fix_summary,
             "root_cause": r.root_cause,
             "tests_run": r.tests_run,
             "confidence": r.confidence,
@@ -57,21 +59,6 @@ def remediations(db: Session = Depends(get_db)):
             "completed_at": r.completed_at,
         }
         for r in rows
-    ]
-
-
-@router.get("/repos")
-def repos():
-    """Connected repositories and their policies (technical view)."""
-    return [
-        {
-            "full_name": repo.full_name,
-            "trigger_labels": repo.trigger_labels,
-            "merge_policy": repo.merge_policy,
-            "max_acu_per_session": repo.max_acu_per_session,
-            "baseline_engineer_hours_per_issue": repo.baseline_engineer_hours_per_issue,
-        }
-        for repo in get_repo_configs()
     ]
 
 

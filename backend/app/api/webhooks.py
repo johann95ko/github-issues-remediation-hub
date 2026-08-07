@@ -56,7 +56,7 @@ async def github_webhook(
     labels = [label.get("name", "") for label in issue.get("labels", [])]
 
     orchestrator = request.app.state.orchestrator
-    repo = orchestrator.should_remediate(repo_full_name, labels)
+    repo = orchestrator.should_remediate(db, repo_full_name, labels)
     if repo is None:
         return {"status": "ignored", "reason": "repo not monitored or labels do not qualify"}
 

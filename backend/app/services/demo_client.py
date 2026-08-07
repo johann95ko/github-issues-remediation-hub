@@ -21,6 +21,34 @@ _FAKE_ROOT_CAUSES = [
     "CSV export streamed rows before headers were flushed.",
 ]
 
+_FAKE_SUMMARIES = [
+    (
+        "Exporting a chart with no rows returned a 500 error instead of an empty file.",
+        "Adds a guard for empty result sets in the export serializer and returns a valid empty CSV.",
+    ),
+    (
+        "Dashboard filters silently reset after a browser refresh.",
+        "Persists filter state to the URL so refreshes and shared links keep the same view.",
+    ),
+    (
+        "Scheduled reports rendered charts in UTC regardless of the dashboard timezone.",
+        "Threads the dashboard timezone through the report renderer; adds regression tests.",
+    ),
+]
+
+_FAKE_DISCOVERIES = [
+    {
+        "title": "Export serializer swallows upstream database errors",
+        "description": "While reproducing the export bug, database timeouts surfaced as generic 500s with no logging. Suggest propagating the error class and logging the query id.",
+        "severity": "medium",
+    },
+    {
+        "title": "Stale schema cache never invalidated after dataset edit",
+        "description": "Editing a dataset's columns leaves SQL Lab autocomplete serving the old schema until process restart.",
+        "severity": "high",
+    },
+]
+
 
 class DemoDevinClient:
     def __init__(self) -> None:
@@ -57,7 +85,14 @@ class DemoDevinClient:
                 "status_detail": "finished",
                 "acus_consumed": round(random.uniform(2, 9), 2),
                 "pull_requests": [],
-                "structured_output": {"outcome": "fixed", "root_cause": random.choice(_FAKE_ROOT_CAUSES), "tests_run": "pytest (simulated)", "confidence": "medium"},
+                "structured_output": {
+                    "outcome": "fixed",
+                    "problem_summary": _FAKE_SUMMARIES[0][0],
+                    "fix_summary": _FAKE_SUMMARIES[0][1],
+                    "root_cause": random.choice(_FAKE_ROOT_CAUSES),
+                    "tests_run": "pytest (simulated)",
+                    "confidence": "medium",
+                },
             }
 
         elapsed = time.time() - record["created_at"]
@@ -74,6 +109,7 @@ class DemoDevinClient:
 
         issue_number = _extract_issue_number(record["tags"])
         outcome = record["planned_outcome"]
+        problem, fix = random.choice(_FAKE_SUMMARIES)
         finished = {
             **base,
             "status": "exit" if outcome != "blocked" else "error",
@@ -81,9 +117,14 @@ class DemoDevinClient:
             "structured_output": {
                 "issue_number": issue_number,
                 "outcome": outcome,
+                "problem_summary": problem,
+                "fix_summary": fix if outcome == "fixed" else "No safe fix identified; needs engineer investigation.",
                 "root_cause": random.choice(_FAKE_ROOT_CAUSES),
                 "tests_run": "pytest tests/unit (simulated run, 214 passed)",
                 "confidence": "high" if outcome == "fixed" else "low",
+                # ~30% of runs surface an adjacent defect so the discovered-
+                # issues review queue is demonstrable.
+                "discovered_issues": [random.choice(_FAKE_DISCOVERIES)] if random.random() < 0.3 else [],
             },
         }
         if outcome == "fixed":

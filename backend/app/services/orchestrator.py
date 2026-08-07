@@ -13,8 +13,8 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import RepoConfig, find_repo_config
 from app.models.remediation import Remediation
+from app.models.repo import MonitoredRepo
 from app.services.devin_client import (
     REMEDIATION_OUTPUT_SCHEMA,
     DevinClientProtocol,
@@ -31,13 +31,17 @@ class Orchestrator:
     def __init__(self, devin: DevinClientProtocol) -> None:
         self._devin = devin
 
-    def should_remediate(self, repo_full_name: str, labels: list[str]) -> RepoConfig | None:
-        repo = find_repo_config(repo_full_name)
-        if repo is None:
-            logger.info("Ignoring event for unmonitored repo %s", repo_full_name)
+    def should_remediate(
+        self, db: Session, repo_full_name: str, labels: list[str]
+    ) -> MonitoredRepo | None:
+        repo = db.scalar(
+            select(MonitoredRepo).where(MonitoredRepo.full_name == repo_full_name)
+        )
+        if repo is None or not repo.enabled:
+            logger.info("Ignoring event for unmonitored/disabled repo %s", repo_full_name)
             return None
         if not set(label.lower() for label in labels) & set(
-            trigger.lower() for trigger in repo.trigger_labels
+            trigger.lower() for trigger in repo.labels_list()
         ):
             logger.info(
                 "Issue in %s lacks trigger labels %s", repo_full_name, repo.trigger_labels
@@ -48,7 +52,7 @@ class Orchestrator:
     async def start_remediation(
         self,
         db: Session,
-        repo: RepoConfig,
+        repo: MonitoredRepo,
         issue_number: int,
         issue_title: str,
         issue_body: str,

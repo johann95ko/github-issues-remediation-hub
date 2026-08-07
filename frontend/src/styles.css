@@ -82,6 +82,7 @@ h1, h2, h3 { font-family: 'Source Serif 4', Georgia, serif; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px 20px;
+  box-shadow: 0 1px 2px rgba(27, 27, 29, 0.04), 0 4px 14px rgba(27, 27, 29, 0.03);
 }
 
 .kpi .label { font-size: 13px; color: var(--ink-soft); font-weight: 600; }
@@ -137,3 +138,68 @@ tr.expandable:hover { background: #faf8f5; }
 .detail-grid dd { margin: 0; }
 
 .footer-note { margin-top: 40px; color: var(--ink-soft); font-size: 12.5px; text-align: center; }
+
+/* --- Engineering view controls --- */
+
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 28px; }
+.section-head .section-title { margin: 0 0 12px; }
+
+.btn {
+  font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+  border-radius: 7px; padding: 7px 14px; border: 1px solid transparent;
+}
+.btn.primary { background: var(--ink); color: #fff; }
+.btn.primary:hover { background: #000; }
+.btn.ghost { background: transparent; color: var(--info); border-color: var(--line); }
+.btn.ghost:hover { background: #f2f0ec; }
+.btn.ghost.danger { color: var(--accent-dark); }
+
+.row-actions { white-space: nowrap; }
+.row-actions .btn { margin-left: 6px; padding: 4px 10px; font-size: 12px; }
+
+.chip {
+  display: inline-block; background: #f0eee9; border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 600;
+  margin-right: 4px; color: var(--ink-soft);
+}
+
+.form-card { margin-bottom: 16px; border-left: 3px solid var(--accent); }
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px; }
+@media (max-width: 900px) { .form-grid { grid-template-columns: 1fr; } }
+.form-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+.form-grid input, .form-grid select {
+  font: inherit; font-size: 14px; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--ink);
+}
+.form-grid input:focus, .form-grid select:focus { outline: 2px solid var(--info); outline-offset: 0; }
+.form-grid .checkline { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 8px; }
+.form-actions { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+.form-actions .hint { font-size: 12.5px; color: var(--ink-soft); }
+.form-error { color: var(--accent-dark); font-size: 13px; margin-top: 10px; font-weight: 600; }
+
+.hint { font-size: 12.5px; color: var(--ink-soft); }
+
+/* --- Devin-proposed findings --- */
+
+.finding-list { list-style: none; padding: 0; }
+.finding {
+  display: flex; justify-content: space-between; gap: 16px;
+  padding: 12px 0; border-bottom: 1px solid var(--line);
+}
+.finding:last-child { border-bottom: none; }
+.finding.dim { opacity: 0.65; }
+.finding-title { font-weight: 700; font-size: 14px; }
+.finding-desc { font-size: 13.5px; color: var(--ink-soft); margin: 4px 0; max-width: 70ch; }
+.finding-actions { display: flex; gap: 8px; align-items: flex-start; white-space: nowrap; }
+.badge.sev-high { background: #fbe3e4; color: var(--accent-dark); }
+.badge.sev-medium { background: #fdf3d7; color: var(--warn); }
+.badge.sev-low { background: #eeeeef; color: var(--ink-soft); }
+.reviewed-findings { margin-top: 10px; }
+.reviewed-findings summary { font-size: 13px; color: var(--ink-soft); cursor: pointer; font-weight: 600; }
+
+/* --- Audit trail problem → fix summary --- */
+
+.summary-cell .problem { font-size: 13px; }
+.summary-cell .problem::before { content: "⚠ "; color: var(--warn); }
+.summary-cell .fix { font-size: 13px; color: var(--ok); margin-top: 3px; }
+.summary-cell .fix::before { content: "✓ "; font-weight: 700; }

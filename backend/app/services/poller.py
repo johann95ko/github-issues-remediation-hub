@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
+from app.models.discovered_issue import DiscoveredIssue
 from app.models.remediation import Remediation
 from app.services.devin_client import DevinClientProtocol
 
@@ -87,11 +88,14 @@ class Poller:
         output = session.get("structured_output") or {}
         if output:
             record.outcome = output.get("outcome", record.outcome)
+            record.problem_summary = output.get("problem_summary", record.problem_summary)
+            record.fix_summary = output.get("fix_summary", record.fix_summary)
             record.root_cause = output.get("root_cause", record.root_cause)
             record.tests_run = output.get("tests_run", record.tests_run)
             record.confidence = output.get("confidence", record.confidence)
             if not record.pr_url and output.get("pr_url"):
                 record.pr_url = output["pr_url"]
+            self._capture_discovered_issues(db, record, output.get("discovered_issues") or [])
 
         status = record.devin_status
         detail = record.devin_status_detail
@@ -117,6 +121,37 @@ class Poller:
 
         record.touch()
         db.commit()
+
+    @staticmethod
+    def _capture_discovered_issues(db, record: Remediation, findings: list[dict]) -> None:
+        """Persist agent-surfaced side findings as proposals for human review.
+
+        Dedupe by (repo, title): the poller sees the same structured output on
+        every cycle until the session exits, and different sessions can trip
+        over the same underlying defect.
+        """
+        for finding in findings:
+            title = (finding.get("title") or "").strip()
+            if not title:
+                continue
+            duplicate = db.scalar(
+                select(DiscoveredIssue).where(
+                    DiscoveredIssue.repo_full_name == record.repo_full_name,
+                    DiscoveredIssue.title == title,
+                )
+            )
+            if duplicate is not None:
+                continue
+            db.add(
+                DiscoveredIssue(
+                    remediation_id=record.id,
+                    repo_full_name=record.repo_full_name,
+                    source_issue_number=record.issue_number,
+                    title=title,
+                    description=finding.get("description", ""),
+                    severity=finding.get("severity", "medium"),
+                )
+            )
 
     @staticmethod
     def _terminal_state(record: Remediation) -> str:

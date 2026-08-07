@@ -58,6 +58,7 @@ def weekly_impact(db: Session) -> dict:
             "issue_number": r.issue_number,
             "title": r.issue_title,
             "pr_url": r.pr_url,
+            "fix_summary": r.fix_summary,
             "root_cause": r.root_cause,
         }
         for r in sorted(rows, key=lambda r: r.completed_at, reverse=True)[:5]

@@ -6,15 +6,15 @@ import {
 const money = (n) => n == null ? '—' : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 
 // Answers the four leadership questions in reading order:
-// 1. Is it worth it? 2. What did it do for us this week?
-// 3. What is it doing right now? 4. Where do you need me?
+// return on investment, impact delivered, current activity, and where
+// attention or resources are needed.
 export default function LeadershipView({ overview }) {
   if (!overview) return <p className="empty">Loading…</p>
   const { cost_vs_benefit: roi, weekly_impact, live_agents, attention_needed, throughput } = overview
 
   return (
     <>
-      <h2 className="section-title">Is it worth it?</h2>
+      <h2 className="section-title">Investment &amp; return</h2>
       <div className="kpi-row">
         <div className="card kpi">
           <div className="label">Estimated value delivered</div>
@@ -27,20 +27,20 @@ export default function LeadershipView({ overview }) {
           <div className="hint">{roi.total_acus} ACUs at ${roi.assumptions.usd_per_acu}/ACU</div>
         </div>
         <div className="card kpi">
-          <div className="label">Return on spend</div>
+          <div className="label">Return on investment</div>
           <div className="value accent">{roi.roi_multiple ? `${roi.roi_multiple}×` : '—'}</div>
-          <div className="hint">value delivered ÷ compute cost</div>
+          <div className="hint">estimated value delivered ÷ compute cost</div>
         </div>
         <div className="card kpi">
-          <div className="label">Fix success rate</div>
+          <div className="label">Resolution rate</div>
           <div className="value">{throughput.success_rate != null ? `${Math.round(throughput.success_rate * 100)}%` : '—'}</div>
-          <div className="hint">{throughput.succeeded} fixed · {throughput.failed} needed humans</div>
+          <div className="hint">{throughput.succeeded} resolved · {throughput.failed} escalated to engineers</div>
         </div>
       </div>
 
       <div className="grid-2" style={{ marginTop: 24 }}>
         <div>
-          <h2 className="section-title">Resolved this week</h2>
+          <h2 className="section-title">Impact delivered — last 7 days</h2>
           <div className="card">
             <p style={{ marginBottom: 8 }}>
               <strong>{weekly_impact.resolved_last_7_days}</strong> issues remediated in the last 7 days
@@ -51,17 +51,17 @@ export default function LeadershipView({ overview }) {
                   <span>
                     <a href={h.pr_url || '#'} target="_blank" rel="noreferrer">#{h.issue_number}</a>{' '}
                     {h.title}
-                    <div className="meta">{h.root_cause}</div>
+                    <div className="meta">{h.fix_summary || h.root_cause}</div>
                   </span>
                 </li>
               ))}
-              {weekly_impact.highlights.length === 0 && <li className="empty">Nothing resolved yet this week.</li>}
+              {weekly_impact.highlights.length === 0 && <li className="empty">No completed remediations in the last 7 days.</li>}
             </ul>
           </div>
         </div>
 
         <div>
-          <h2 className="section-title">Working right now</h2>
+          <h2 className="section-title">Active remediations</h2>
           <div className="card">
             <p style={{ marginBottom: 8 }}>
               <strong>{live_agents.length}</strong> agent{live_agents.length === 1 ? '' : 's'} active
@@ -78,13 +78,13 @@ export default function LeadershipView({ overview }) {
                   </span>
                 </li>
               ))}
-              {live_agents.length === 0 && <li className="empty">All quiet — no active remediations.</li>}
+              {live_agents.length === 0 && <li className="empty">No remediations in progress.</li>}
             </ul>
           </div>
         </div>
       </div>
 
-      <h2 className="section-title">Where your attention is needed</h2>
+      <h2 className="section-title">Requires attention</h2>
       <div className="grid-2">
         <div className="card">
           <p style={{ marginBottom: 8 }}><strong>Pull requests waiting on human review</strong></p>
@@ -124,8 +124,8 @@ export default function LeadershipView({ overview }) {
             <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
             <Tooltip />
             <Legend />
-            <Bar dataKey="succeeded" name="Fixed" stackId="a" fill="#1e7d43" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="failed" name="Needed humans" stackId="a" fill="#d22128" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="succeeded" name="Resolved" stackId="a" fill="#1e7d43" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="failed" name="Escalated" stackId="a" fill="#d22128" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
